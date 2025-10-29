@@ -1,7 +1,11 @@
 streamlit
+torch
+numpy
 opencv-python-headless
 pillow
-numpy
+albumentations
+segmentation-models-pytorch
 pandas
 matplotlib
-scikit-learn
+gdown
+requests
