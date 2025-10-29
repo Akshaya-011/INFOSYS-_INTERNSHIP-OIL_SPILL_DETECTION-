@@ -11,6 +11,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import json
+import gdown
+import requests
 
 # Page configuration
 st.set_page_config(
@@ -168,17 +170,43 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize detector and load model automatically
+# Initialize detector and load model automatically with download capability
 @st.cache_resource
 def load_model():
     model_path = "checkpoints/best_model.pth"
-    if os.path.exists(model_path):
+    
+    # Create checkpoints directory if it doesn't exist
+    os.makedirs("checkpoints", exist_ok=True)
+    
+    if not os.path.exists(model_path):
+        st.info("📥 Downloading model file from Google Drive... This may take a few minutes.")
+        
+        try:
+            # Google Drive file ID from your link
+            file_id = "1pgcG1qSejNd6VtkfFIMDZdnNBqyHnLjm"
+            url = f"https://drive.google.com/uc?id={file_id}"
+            
+            # Download using gdown
+            gdown.download(url, model_path, quiet=False)
+            
+            if os.path.exists(model_path):
+                st.success("✅ Model downloaded successfully!")
+            else:
+                st.error("❌ Failed to download model file")
+                return None
+                
+        except Exception as e:
+            st.error(f"❌ Error downloading model: {str(e)}")
+            return None
+    
+    # Load the model
+    try:
         model = smp.Unet(encoder_name="resnet18", encoder_weights=None, in_channels=3, classes=1)
         model.load_state_dict(torch.load(model_path, map_location='cpu'))
         model.eval()
         return model
-    else:
-        st.error("❌ Model file not found at 'checkpoints/best_model.pth'")
+    except Exception as e:
+        st.error(f"❌ Error loading model: {str(e)}")
         return None
 
 # Load model automatically
@@ -374,263 +402,269 @@ if st.session_state.current_page == "Home":
 elif st.session_state.current_page == "Detection":
     st.markdown('<h2 class="main-header">Oil Spill Detection</h2>', unsafe_allow_html=True)
     
-    # Upload image section
-    uploaded_file = st.file_uploader("Upload satellite image", type=['jpg', 'jpeg', 'png'])
-    
-    # Settings
-    st.subheader("Detection Settings")
-    col1, col2 = st.columns(2)
-    with col1:
-        confidence = st.slider("Confidence Threshold", 0.1, 1.0, 0.5, 0.05)
-    with col2:
-        scale_factor = st.slider("Scale Detection %", 0.1, 1.0, 0.3, 0.1,
-                               help="Scale down detection percentages to realistic levels")
+    if detector is None:
+        st.error("❌ Model not available. Please check if the model file was downloaded correctly.")
+        if st.button("🔄 Retry Download Model"):
+            st.cache_resource.clear()
+            st.rerun()
+    else:
+        # Upload image section
+        uploaded_file = st.file_uploader("Upload satellite image", type=['jpg', 'jpeg', 'png'])
+        
+        # Settings
+        st.subheader("Detection Settings")
+        col1, col2 = st.columns(2)
+        with col1:
+            confidence = st.slider("Confidence Threshold", 0.1, 1.0, 0.5, 0.05)
+        with col2:
+            scale_factor = st.slider("Scale Detection %", 0.1, 1.0, 0.3, 0.1,
+                                   help="Scale down detection percentages to realistic levels")
 
-    if uploaded_file and detector is not None and st.button("Detect Oil Spills"):
-        # Load and display original
-        image = Image.open(uploaded_file)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.image(image, caption="Original Image")
-        
-        # Preprocess
-        image_np = np.array(image)
-        if len(image_np.shape) == 2:
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_GRAY2RGB)
-        
-        transform = A.Compose([
-            A.Resize(128, 128),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ToTensorV2()
-        ])
-        
-        transformed = transform(image=image_np)
-        input_tensor = transformed['image'].unsqueeze(0)
-        
-        # Predict
-        with torch.no_grad():
-            output = detector(input_tensor)
-            probs = torch.sigmoid(output)
-            mask = (probs > confidence).float()
-        
-        # Resize mask to original size
-        mask_np = mask.squeeze().numpy()
-        h, w = image_np.shape[:2]
-        mask_resized = cv2.resize(mask_np, (w, h))
-        
-        # Calculate original statistics
-        original_oil_pixels = np.sum(mask_resized > 0.5)
-        total_pixels = mask_resized.size
-        original_oil_percentage = (original_oil_pixels / total_pixels) * 100
-        
-        # SCALE DOWN THE DETECTION to realistic levels
-        scaled_oil_percentage = original_oil_percentage * scale_factor
-        scaled_oil_pixels = int((scaled_oil_percentage / 100) * total_pixels)
-        
-        # Create a scaled mask for display
-        if scale_factor < 1.0:
-            # Randomly remove some oil pixels to achieve scaling
-            oil_indices = np.where(mask_resized > 0.5)
-            num_to_keep = int(len(oil_indices[0]) * scale_factor)
+        if uploaded_file and st.button("Detect Oil Spills"):
+            # Load and display original
+            image = Image.open(uploaded_file)
             
-            if num_to_keep > 0:
-                # Randomly select which oil pixels to keep
-                keep_indices = np.random.choice(len(oil_indices[0]), num_to_keep, replace=False)
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.image(image, caption="Original Image")
+            
+            # Preprocess
+            image_np = np.array(image)
+            if len(image_np.shape) == 2:
+                image_np = cv2.cvtColor(image_np, cv2.COLOR_GRAY2RGB)
+            
+            transform = A.Compose([
+                A.Resize(128, 128),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
+            ])
+            
+            transformed = transform(image=image_np)
+            input_tensor = transformed['image'].unsqueeze(0)
+            
+            # Predict
+            with torch.no_grad():
+                output = detector(input_tensor)
+                probs = torch.sigmoid(output)
+                mask = (probs > confidence).float()
+            
+            # Resize mask to original size
+            mask_np = mask.squeeze().numpy()
+            h, w = image_np.shape[:2]
+            mask_resized = cv2.resize(mask_np, (w, h))
+            
+            # Calculate original statistics
+            original_oil_pixels = np.sum(mask_resized > 0.5)
+            total_pixels = mask_resized.size
+            original_oil_percentage = (original_oil_pixels / total_pixels) * 100
+            
+            # SCALE DOWN THE DETECTION to realistic levels
+            scaled_oil_percentage = original_oil_percentage * scale_factor
+            scaled_oil_pixels = int((scaled_oil_percentage / 100) * total_pixels)
+            
+            # Create a scaled mask for display
+            if scale_factor < 1.0:
+                # Randomly remove some oil pixels to achieve scaling
+                oil_indices = np.where(mask_resized > 0.5)
+                num_to_keep = int(len(oil_indices[0]) * scale_factor)
                 
-                # Create scaled mask
-                scaled_mask = np.zeros_like(mask_resized)
-                scaled_mask[oil_indices[0][keep_indices], oil_indices[1][keep_indices]] = 1
+                if num_to_keep > 0:
+                    # Randomly select which oil pixels to keep
+                    keep_indices = np.random.choice(len(oil_indices[0]), num_to_keep, replace=False)
+                    
+                    # Create scaled mask
+                    scaled_mask = np.zeros_like(mask_resized)
+                    scaled_mask[oil_indices[0][keep_indices], oil_indices[1][keep_indices]] = 1
+                else:
+                    scaled_mask = np.zeros_like(mask_resized)
             else:
-                scaled_mask = np.zeros_like(mask_resized)
-        else:
-            scaled_mask = mask_resized
-        
-        # Create overlay (red for oil spills)
-        overlay = image_np.copy()
-        overlay[scaled_mask > 0.5] = [255, 0, 0]
-        
-        # Estimate area
-        estimated_area_m2 = scaled_oil_pixels
-        estimated_area_km2 = scaled_oil_pixels * 1e-6
-        
-        # BETTER SEVERITY CALCULATION
-        if scaled_oil_percentage > 25:
-            severity = "CRITICAL"
-            alert_color = "🔴"
-        elif scaled_oil_percentage > 15:
-            severity = "VERY HIGH"
-            alert_color = "🟠"
-        elif scaled_oil_percentage > 8:
-            severity = "HIGH"
-            alert_color = "🟡" 
-        elif scaled_oil_percentage > 3:
-            severity = "MEDIUM"
-            alert_color = "🟢"
-        elif scaled_oil_percentage > 0.5:
-            severity = "LOW"
-            alert_color = "🔵"
-        else:
-            severity = "MINIMAL"
-            alert_color = "⚪"
-        
-        with col2:
-            st.image(scaled_mask, caption=f"Oil Spill Mask ({scaled_oil_percentage:.1f}%)")
-        
-        with col3:
-            st.image(overlay, caption="Detection Overlay")
-        
-        # Display statistics
-        st.markdown("---")
-        st.subheader("📊 Detection Analytics")
-        
-        # Show scaling info
-        if scale_factor < 1.0:
-            st.info(f"🔧 Scaled from {original_oil_percentage:.1f}% to {scaled_oil_percentage:.1f}% coverage")
-        
-        # Metrics in columns
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            st.metric("Oil Pixels", f"{scaled_oil_pixels:,}")
-        
-        with col2:
-            st.metric("Total Pixels", f"{total_pixels:,}")
-        
-        with col3:
-            st.metric("Oil Coverage", f"{scaled_oil_percentage:.2f}%")
-        
-        with col4:
-            st.metric("Estimated Area", f"{estimated_area_km2:.4f} km²")
-        
-        with col5:
-            st.metric("Spill Severity", f"{alert_color} {severity}")
-        
-        # CHARTS SECTION
-        st.markdown("---")
-        st.subheader("📈 Visual Analytics")
-        
-        # Create charts
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        
-        # Pie chart for oil coverage
-        labels = ['Oil Spill', 'Clean Area']
-        sizes = [scaled_oil_percentage, 100 - scaled_oil_percentage]
-        colors = ['#ff6b6b', '#4ecdc4']
-        explode = (0.1, 0)
-        
-        ax1.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%',
-                shadow=True, startangle=90)
-        ax1.set_title('Oil Spill Coverage Distribution')
-        
-        # Bar chart for severity comparison
-        severity_levels = ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'VERY HIGH', 'CRITICAL']
-        severity_thresholds = [0.5, 3, 8, 15, 25, 100]
-        current_severity_index = next(i for i, threshold in enumerate(severity_thresholds) if scaled_oil_percentage <= threshold)
-        
-        colors_bar = ['#90cdf4', '#63b3ed', '#4299e1', '#3182ce', '#2b6cb0', '#2c5282']
-        bars = ax2.bar(severity_levels, severity_thresholds, color=colors_bar, alpha=0.7)
-        
-        # Highlight current severity
-        bars[current_severity_index].set_color('#e53e3e')
-        bars[current_severity_index].set_alpha(1.0)
-        
-        # Add current percentage line
-        ax2.axhline(y=scaled_oil_percentage, color='red', linestyle='--', linewidth=2, label=f'Current: {scaled_oil_percentage:.1f}%')
-        ax2.legend()
-        
-        ax2.set_ylabel('Oil Coverage (%)')
-        ax2.set_title('Spill Severity Classification')
-        ax2.tick_params(axis='x', rotation=45)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        
-        # Additional chart - Confidence distribution
-        st.subheader("🔍 Confidence Analysis")
-        
-        # Create confidence histogram
-        fig2, ax3 = plt.subplots(figsize=(10, 6))
-        
-        # Simulate confidence scores (in a real scenario, you'd have the actual probabilities)
-        confidence_scores = np.random.beta(2, 5, 1000) * scaled_oil_percentage / 100
-        confidence_scores = np.clip(confidence_scores, 0, 1)
-        
-        ax3.hist(confidence_scores, bins=20, alpha=0.7, color='#4299e1', edgecolor='black')
-        ax3.axvline(confidence, color='red', linestyle='--', linewidth=2, label=f'Threshold: {confidence}')
-        ax3.set_xlabel('Confidence Score')
-        ax3.set_ylabel('Frequency')
-        ax3.set_title('Detection Confidence Distribution')
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-        
-        st.pyplot(fig2)
-        
-        # Alert messages
-        if severity == "CRITICAL":
-            st.error(f"🚨 CRITICAL: {scaled_oil_percentage:.2f}% oil coverage - MAJOR DISASTER!")
-        elif severity == "VERY HIGH":
-            st.error(f"⚠️ VERY HIGH: {scaled_oil_percentage:.2f}% oil coverage - Serious spill")
-        elif severity == "HIGH":
-            st.warning(f"⚠️ HIGH: {scaled_oil_percentage:.2f}% oil coverage - Significant spill")
-        elif severity == "MEDIUM":
-            st.warning(f"📢 MEDIUM: {scaled_oil_percentage:.2f}% oil coverage - Moderate spill")
-        elif severity == "LOW":
-            st.info(f"ℹ️ LOW: {scaled_oil_percentage:.2f}% oil coverage - Minor spill")
-        else:
-            st.success(f"✅ MINIMAL: {scaled_oil_percentage:.2f}% oil coverage - Trace detection")
-        
-        # Store detection in history
-        detection_data = {
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'image_name': uploaded_file.name,
-            'oil_pixels': int(scaled_oil_pixels),
-            'total_pixels': int(total_pixels),
-            'oil_percentage': round(scaled_oil_percentage, 2),
-            'estimated_area_km2': round(estimated_area_km2, 4),
-            'severity': severity,
-            'confidence_threshold': confidence,
-            'scale_factor': scale_factor
-        }
-        
-        st.session_state.detection_history.append(detection_data)
-        
-        # Download section
-        st.markdown("---")
-        st.subheader("💾 Download Results")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Download mask
-            mask_image = Image.fromarray((scaled_mask * 255).astype(np.uint8))
-            st.download_button(
-                "Download Mask",
-                data=cv2.imencode('.png', (scaled_mask * 255).astype(np.uint8))[1].tobytes(),
-                file_name=f"oil_mask_{datetime.now().strftime('%H%M%S')}.png",
-                mime="image/png"
-            )
-        
-        with col2:
-            # Download overlay
-            overlay_image = Image.fromarray(overlay)
-            st.download_button(
-                "Download Overlay",
-                data=cv2.imencode('.png', overlay)[1].tobytes(),
-                file_name=f"oil_overlay_{datetime.now().strftime('%H%M%S')}.png",
-                mime="image/png"
-            )
-        
-        with col3:
-            # Download detection data
-            csv_data = pd.DataFrame([detection_data]).to_csv(index=False)
-            st.download_button(
-                "Download Data",
-                data=csv_data,
-                file_name=f"oil_detection_data_{datetime.now().strftime('%H%M%S')}.csv",
-                mime="text/csv"
-            )
+                scaled_mask = mask_resized
+            
+            # Create overlay (red for oil spills)
+            overlay = image_np.copy()
+            overlay[scaled_mask > 0.5] = [255, 0, 0]
+            
+            # Estimate area
+            estimated_area_m2 = scaled_oil_pixels
+            estimated_area_km2 = scaled_oil_pixels * 1e-6
+            
+            # BETTER SEVERITY CALCULATION
+            if scaled_oil_percentage > 25:
+                severity = "CRITICAL"
+                alert_color = "🔴"
+            elif scaled_oil_percentage > 15:
+                severity = "VERY HIGH"
+                alert_color = "🟠"
+            elif scaled_oil_percentage > 8:
+                severity = "HIGH"
+                alert_color = "🟡" 
+            elif scaled_oil_percentage > 3:
+                severity = "MEDIUM"
+                alert_color = "🟢"
+            elif scaled_oil_percentage > 0.5:
+                severity = "LOW"
+                alert_color = "🔵"
+            else:
+                severity = "MINIMAL"
+                alert_color = "⚪"
+            
+            with col2:
+                st.image(scaled_mask, caption=f"Oil Spill Mask ({scaled_oil_percentage:.1f}%)")
+            
+            with col3:
+                st.image(overlay, caption="Detection Overlay")
+            
+            # Display statistics
+            st.markdown("---")
+            st.subheader("📊 Detection Analytics")
+            
+            # Show scaling info
+            if scale_factor < 1.0:
+                st.info(f"🔧 Scaled from {original_oil_percentage:.1f}% to {scaled_oil_percentage:.1f}% coverage")
+            
+            # Metrics in columns
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                st.metric("Oil Pixels", f"{scaled_oil_pixels:,}")
+            
+            with col2:
+                st.metric("Total Pixels", f"{total_pixels:,}")
+            
+            with col3:
+                st.metric("Oil Coverage", f"{scaled_oil_percentage:.2f}%")
+            
+            with col4:
+                st.metric("Estimated Area", f"{estimated_area_km2:.4f} km²")
+            
+            with col5:
+                st.metric("Spill Severity", f"{alert_color} {severity}")
+            
+            # CHARTS SECTION
+            st.markdown("---")
+            st.subheader("📈 Visual Analytics")
+            
+            # Create charts
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+            
+            # Pie chart for oil coverage
+            labels = ['Oil Spill', 'Clean Area']
+            sizes = [scaled_oil_percentage, 100 - scaled_oil_percentage]
+            colors = ['#ff6b6b', '#4ecdc4']
+            explode = (0.1, 0)
+            
+            ax1.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%',
+                    shadow=True, startangle=90)
+            ax1.set_title('Oil Spill Coverage Distribution')
+            
+            # Bar chart for severity comparison
+            severity_levels = ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'VERY HIGH', 'CRITICAL']
+            severity_thresholds = [0.5, 3, 8, 15, 25, 100]
+            current_severity_index = next(i for i, threshold in enumerate(severity_thresholds) if scaled_oil_percentage <= threshold)
+            
+            colors_bar = ['#90cdf4', '#63b3ed', '#4299e1', '#3182ce', '#2b6cb0', '#2c5282']
+            bars = ax2.bar(severity_levels, severity_thresholds, color=colors_bar, alpha=0.7)
+            
+            # Highlight current severity
+            bars[current_severity_index].set_color('#e53e3e')
+            bars[current_severity_index].set_alpha(1.0)
+            
+            # Add current percentage line
+            ax2.axhline(y=scaled_oil_percentage, color='red', linestyle='--', linewidth=2, label=f'Current: {scaled_oil_percentage:.1f}%')
+            ax2.legend()
+            
+            ax2.set_ylabel('Oil Coverage (%)')
+            ax2.set_title('Spill Severity Classification')
+            ax2.tick_params(axis='x', rotation=45)
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            # Additional chart - Confidence distribution
+            st.subheader("🔍 Confidence Analysis")
+            
+            # Create confidence histogram
+            fig2, ax3 = plt.subplots(figsize=(10, 6))
+            
+            # Simulate confidence scores (in a real scenario, you'd have the actual probabilities)
+            confidence_scores = np.random.beta(2, 5, 1000) * scaled_oil_percentage / 100
+            confidence_scores = np.clip(confidence_scores, 0, 1)
+            
+            ax3.hist(confidence_scores, bins=20, alpha=0.7, color='#4299e1', edgecolor='black')
+            ax3.axvline(confidence, color='red', linestyle='--', linewidth=2, label=f'Threshold: {confidence}')
+            ax3.set_xlabel('Confidence Score')
+            ax3.set_ylabel('Frequency')
+            ax3.set_title('Detection Confidence Distribution')
+            ax3.legend()
+            ax3.grid(True, alpha=0.3)
+            
+            st.pyplot(fig2)
+            
+            # Alert messages
+            if severity == "CRITICAL":
+                st.error(f"🚨 CRITICAL: {scaled_oil_percentage:.2f}% oil coverage - MAJOR DISASTER!")
+            elif severity == "VERY HIGH":
+                st.error(f"⚠️ VERY HIGH: {scaled_oil_percentage:.2f}% oil coverage - Serious spill")
+            elif severity == "HIGH":
+                st.warning(f"⚠️ HIGH: {scaled_oil_percentage:.2f}% oil coverage - Significant spill")
+            elif severity == "MEDIUM":
+                st.warning(f"📢 MEDIUM: {scaled_oil_percentage:.2f}% oil coverage - Moderate spill")
+            elif severity == "LOW":
+                st.info(f"ℹ️ LOW: {scaled_oil_percentage:.2f}% oil coverage - Minor spill")
+            else:
+                st.success(f"✅ MINIMAL: {scaled_oil_percentage:.2f}% oil coverage - Trace detection")
+            
+            # Store detection in history
+            detection_data = {
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'image_name': uploaded_file.name,
+                'oil_pixels': int(scaled_oil_pixels),
+                'total_pixels': int(total_pixels),
+                'oil_percentage': round(scaled_oil_percentage, 2),
+                'estimated_area_km2': round(estimated_area_km2, 4),
+                'severity': severity,
+                'confidence_threshold': confidence,
+                'scale_factor': scale_factor
+            }
+            
+            st.session_state.detection_history.append(detection_data)
+            
+            # Download section
+            st.markdown("---")
+            st.subheader("💾 Download Results")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Download mask
+                mask_image = Image.fromarray((scaled_mask * 255).astype(np.uint8))
+                st.download_button(
+                    "Download Mask",
+                    data=cv2.imencode('.png', (scaled_mask * 255).astype(np.uint8))[1].tobytes(),
+                    file_name=f"oil_mask_{datetime.now().strftime('%H%M%S')}.png",
+                    mime="image/png"
+                )
+            
+            with col2:
+                # Download overlay
+                overlay_image = Image.fromarray(overlay)
+                st.download_button(
+                    "Download Overlay",
+                    data=cv2.imencode('.png', overlay)[1].tobytes(),
+                    file_name=f"oil_overlay_{datetime.now().strftime('%H%M%S')}.png",
+                    mime="image/png"
+                )
+            
+            with col3:
+                # Download detection data
+                csv_data = pd.DataFrame([detection_data]).to_csv(index=False)
+                st.download_button(
+                    "Download Data",
+                    data=csv_data,
+                    file_name=f"oil_detection_data_{datetime.now().strftime('%H%M%S')}.csv",
+                    mime="text/csv"
+                )
 
 # HISTORY PAGE with Enhanced Data Management
 elif st.session_state.current_page == "History":
