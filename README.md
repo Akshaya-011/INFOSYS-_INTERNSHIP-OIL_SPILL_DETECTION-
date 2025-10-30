@@ -15,9 +15,8 @@ It uses a **U-Net (ResNet18)** deep learning architecture to segment oil regions
 ```
 
 ### 🛰️ Detection & Analytics
-#### Oil Spill Detection Output
-```markdown
-![Detection Result](3_accuracy_pie.png)
+####Oil spill detection
+![Detection Result](https://github.com/Akshaya-011/INFOSYS-_INTERNSHIP-OIL_SPILL_DETECTION-/blob/main/Screenshot%202025-10-30%20121404.png)
 ```
 
 #### Classification Metrics
@@ -175,6 +174,7 @@ Licensed under the **MIT License**.
 ---
 
 > 💙 *"Protecting Our Oceans, One Detection at a Time."*
+
 
 
 
