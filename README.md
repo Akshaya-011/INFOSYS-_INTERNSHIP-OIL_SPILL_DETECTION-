@@ -11,7 +11,7 @@ It uses a **U-Net (ResNet18)** deep learning architecture to segment oil regions
 
 ### 🏠 Home Interface
 
-![Home Page](Screenshot2025-10-30120807.png)
+![Home Page](https://github.com/Akshaya-011/INFOSYS-_INTERNSHIP-OIL_SPILL_DETECTION-/blob/main/Screenshot%202025-10-30%20120807.png)
 ```
 
 ### 🛰️ Detection & Analytics
@@ -175,6 +175,7 @@ Licensed under the **MIT License**.
 ---
 
 > 💙 *"Protecting Our Oceans, One Detection at a Time."*
+
 
 
 
