@@ -14,23 +14,6 @@ It uses a **U-Net (ResNet18)** deep learning architecture to segment oil regions
 ![Home Page](https://github.com/Akshaya-011/INFOSYS-_INTERNSHIP-OIL_SPILL_DETECTION-/blob/main/Screenshot%202025-10-30%20120807.png)
 ```
 
-### 🛰️ Detection & Analytics
-####Oil spill detection
-![Detection Result](https://github.com/Akshaya-011/INFOSYS-_INTERNSHIP-OIL_SPILL_DETECTION-/blob/main/Screenshot%202025-10-30%20121404.png)
-```
-
-#### Classification Metrics
-```markdown
-![Classification Metrics](2_classification_metrics_bar.png)
-```
-
-#### Confusion Matrix
-```markdown
-![Confusion Matrix](1_confusion_matrix.png)
-```
-
----
-
 ## 🌍 Project Overview
 
 Oil spills cause severe harm to marine ecosystems and economies. Manual detection from satellite images is slow and error-prone.  
@@ -174,6 +157,7 @@ Licensed under the **MIT License**.
 ---
 
 > 💙 *"Protecting Our Oceans, One Detection at a Time."*
+
 
 
 
