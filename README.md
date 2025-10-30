@@ -11,7 +11,7 @@ It uses a **U-Net (ResNet18)** deep learning architecture to segment oil regions
 
 ### 🏠 Home Interface
 
-![Home Page](Screenshot_2025-10-30_120807.png)
+![Home Page](Screenshot 2025-10-30 120807.png)
 ```
 
 ### 🛰️ Detection & Analytics
@@ -175,3 +175,4 @@ Licensed under the **MIT License**.
 ---
 
 > 💙 *"Protecting Our Oceans, One Detection at a Time."*
+
